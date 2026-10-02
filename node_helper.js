@@ -104,18 +104,40 @@ module.exports = NodeHelper.create({
         url: url,
         caption: config.source,
       }]);
-    } else if (source.startsWith("/r/")) {
+	} else if (source.startsWith("/r/")) {
       self.request(config, {
-        url: `https://www.reddit.com${config.source}/hot.json`,
+        url: `https://www.reddit.com${config.source}/hot.rss`,
         headers: {
-          "user-agent": "MagicMirror:MMM-Wallpaper:v1.0 (by /u/kolbyhack)"
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+          "Accept-Language": "en-US,en;q=0.9",
+          "Accept-Encoding": "gzip, deflate, br",
+          "Sec-Ch-Ua": '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+          "Sec-Ch-Ua-Mobile": "?0",
+          "Sec-Ch-Ua-Platform": '"Windows"',
+          "Sec-Fetch-Dest": "document",
+          "Sec-Fetch-Mode": "navigate",
+          "Sec-Fetch-Site": "none",
+          "Sec-Fetch-User": "?1",
+          "Upgrade-Insecure-Requests": "1"
         },
       });
     } else if (source.startsWith("/user/")) {
       self.request(config, {
-        url: `https://www.reddit.com${config.source}.json`,
+        url: `https://www.reddit.com${config.source}.rss`,
         headers: {
-          "user-agent": "MagicMirror:MMM-Wallpaper:v1.0 (by /u/kolbyhack)"
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+          "Accept-Language": "en-US,en;q=0.9",
+          "Accept-Encoding": "gzip, deflate, br",
+          "Sec-Ch-Ua": '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+          "Sec-Ch-Ua-Mobile": "?0",
+          "Sec-Ch-Ua-Platform": '"Windows"',
+          "Sec-Fetch-Dest": "document",
+          "Sec-Fetch-Mode": "navigate",
+          "Sec-Fetch-Site": "none",
+          "Sec-Fetch-User": "?1",
+          "Upgrade-Insecure-Requests": "1"
         },
       });
     } else if (source === "pexels") {
@@ -266,8 +288,57 @@ module.exports = NodeHelper.create({
     var images;
 
     var source = config.source.toLowerCase();
-    if (source.startsWith("/r/") || source.startsWith("/user/")) {
-      images = self.processRedditData(config, JSON.parse(body));
+	if (source.startsWith("/r/") || source.startsWith("/user/")) {
+        console.log(`[MMM-Wallpaper] Reddit returned HTTP Status: ${response.status}`);
+        
+        images = []; 
+        
+        // Decode the HTML entities so we can read the feed
+        var decodedBody = (typeof body === 'string' ? body : "")
+            .replace(/&amp;/g, "&")
+            .replace(/&lt;/g, "<")
+            .replace(/&gt;/g, ">")
+            .replace(/&quot;/g, '"')
+            .replace(/&#39;/g, "'");
+
+        // Split the XML into individual Reddit posts
+        var entries = decodedBody.split("<entry>");
+        
+        // Loop through each post (skipping the first item, which is just the feed header)
+        for (var i = 1; i < entries.length; i++) {
+            var entry = entries[i];
+            
+            // Find the title tag inside this specific post
+            var titleMatch = entry.match(/<title>([\s\S]*?)<\/title>/i);
+            var postTitle = titleMatch ? titleMatch[1].trim() : "Reddit Wallpaper"; // Fallback just in case
+
+			// REMOVED preview.redd.it from the search!
+            var imgRegex = /(https:\/\/(?:i\.redd\.it|i\.imgur\.com)\/[a-zA-Z0-9_-]+\.(?:jpg|jpeg|png|webp))/i;
+            var imgMatch = entry.match(imgRegex);
+            
+            // If we found an image...
+            if (imgMatch) {
+                var cleanUrl = imgMatch[1]; // We don't need to split '?' anymore, the URL is already clean!
+                
+                // Prevent duplicates
+                var alreadyExists = images.find(img => img.url === cleanUrl);
+                
+                if (!alreadyExists) {
+                    images.push({
+                        url: cleanUrl,
+                        caption: postTitle, 
+                        variants: [ { url: cleanUrl, width: 1920, height: 1080 } ]
+                    });
+                    
+                    if (images.length === config.maximumEntries) {
+                        break; 
+                    }
+                }
+            }
+        }
+        
+        console.log(`[MMM-Wallpaper] Extracted ${images.length} images from Reddit XML.`);
+
     } else if (source.startsWith("icloud:")) {
       images = self.processiCloudData(response, JSON.parse(body), config);
     } else if (source === "pexels") {
