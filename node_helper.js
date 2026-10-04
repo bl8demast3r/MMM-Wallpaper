@@ -147,6 +147,55 @@ module.exports = NodeHelper.create({
           Authorization: config.pexels_key
         },
       });
+    } else if (source.startsWith("unsplash")) {
+      const apiKey = config.unsplashApiKey || config.unsplashAccessKey;
+      if (!apiKey) {
+        console.error("MMM-Wallpaper: Please specify an API key for Unsplash (unsplashApiKey)");
+        return;
+      }
+
+      let query = "";
+      if (config.source.includes(":")) {
+        query = config.source.substring(config.source.indexOf(":") + 1).trim();
+      } else if (config.unsplashQuery) {
+        query = config.unsplashQuery.trim();
+      } else if (config.unsplashSearch) {
+        query = config.unsplashSearch.trim();
+      }
+
+      const params = new URLSearchParams();
+      const count = Math.min(Math.max(config.maximumEntries, 1), 30);
+      params.append("count", count);
+
+      if (config.orientation === "vertical") {
+        params.append("orientation", "portrait");
+      } else if (config.orientation === "horizontal") {
+        params.append("orientation", "landscape");
+      }
+
+      if (query && query.length > 0) {
+        params.append("query", query);
+      } else if (config.unsplashCollections) {
+        params.append("collections", config.unsplashCollections);
+      }
+
+      if (config.unsplashTopics) {
+        params.append("topics", config.unsplashTopics);
+      }
+      if (config.unsplashUsername) {
+        params.append("username", config.unsplashUsername);
+      }
+      if (config.unsplashFeatured) {
+        params.append("featured", "true");
+      }
+
+      self.request(config, {
+        url: `https://api.unsplash.com/photos/random?${params.toString()}`,
+        headers: {
+          Authorization: `Client-ID ${apiKey}`,
+          "Accept-Version": "v1",
+        },
+      });
     } else if (source.startsWith("icloud:")) {
       const album = config.source.substring(7).trim();
       const partition = b62decode((album[0] === "A") ? album[1] : album.substring(1, 3));
@@ -259,6 +308,9 @@ module.exports = NodeHelper.create({
         response.text().then((body) => {
           self.processResponse(response, body, config);
         });
+      })
+      .catch((err) => {
+        console.error(`[MMM-Wallpaper] Error requesting ${params.url}:`, err);
       });
   },
 
@@ -343,6 +395,8 @@ module.exports = NodeHelper.create({
       images = self.processiCloudData(response, JSON.parse(body), config);
     } else if (source === "pexels") {
       images = self.processPexelsData(config, JSON.parse(body));
+    } else if (source.startsWith("unsplash")) {
+      images = self.processUnsplashData(config, response, body);
     } else if (source.startsWith("lightroom:")) {
       images = self.processLightroomData(config, body);
     } else if (source.startsWith("synology-moments:")) {
@@ -374,6 +428,87 @@ module.exports = NodeHelper.create({
         url: image.src[orientation],
         caption: `Photographer: ${image.photographer}`,
       });
+    }
+
+    return images;
+  },
+
+  processUnsplashData: function(config, response, body) {
+    var self = this;
+    var images = [];
+
+    if (response.status !== 200) {
+      console.error(`[MMM-Wallpaper] Unsplash API error (HTTP ${response.status}): ${body}`);
+      return [];
+    }
+
+    var data;
+    try {
+      data = JSON.parse(body);
+    } catch (e) {
+      console.error("[MMM-Wallpaper] Failed to parse Unsplash response JSON:", e);
+      return [];
+    }
+
+    if (data.errors) {
+      console.error("[MMM-Wallpaper] Unsplash API returned errors:", data.errors);
+      return [];
+    }
+
+    var photos = Array.isArray(data) ? data : [data];
+    const apiKey = config.unsplashApiKey || config.unsplashAccessKey;
+
+    for (var photo of photos) {
+      if (!photo || !photo.urls) {
+        continue;
+      }
+
+      var photographer = (photo.user && photo.user.name) ? photo.user.name : "Unsplash";
+      var description = photo.description || photo.alt_description;
+      var caption = description
+        ? `${description} (Photo by ${photographer} on Unsplash)`
+        : `Photo by ${photographer} on Unsplash`;
+
+      var variants = [];
+      var photoWidth = photo.width || 1920;
+      var photoHeight = photo.height || 1080;
+      var aspectRatio = photoWidth / photoHeight;
+
+      if (photo.urls.regular) {
+        var regWidth = (photoWidth >= photoHeight) ? 1080 : Math.round(1080 * aspectRatio);
+        var regHeight = (photoWidth >= photoHeight) ? Math.round(1080 / aspectRatio) : 1080;
+        variants.push({
+          url: photo.urls.regular,
+          width: regWidth,
+          height: regHeight,
+        });
+      }
+      if (photo.urls.full) {
+        variants.push({
+          url: photo.urls.full,
+          width: photoWidth,
+          height: photoHeight,
+        });
+      }
+      if (photo.urls.raw) {
+        variants.push({
+          url: photo.urls.raw,
+          width: photoWidth,
+          height: photoHeight,
+        });
+      }
+
+      variants.sort((a, b) => a.width * a.height - b.width * b.height);
+
+      images.push({
+        url: photo.urls.full || photo.urls.regular || photo.urls.raw,
+        caption: caption,
+        variants: variants,
+      });
+
+      if (images.length === config.maximumEntries) {
+        break;
+      }
     }
 
     return images;
