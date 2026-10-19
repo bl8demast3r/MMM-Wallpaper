@@ -162,7 +162,9 @@ module.exports = NodeHelper.create({
       }
 
       const params = new URLSearchParams();
-      const count = Math.min(Math.max(config.maximumEntries, 1), 30);
+      // When exclusions are configured, request the API maximum so enough photos survive filtering
+      const hasExclusions = (config.unsplashExcludeKeywords || []).length > 0 || (config.unsplashExcludeIds || []).length > 0;
+      const count = hasExclusions ? 30 : Math.min(Math.max(config.maximumEntries, 1), 30);
       params.append("count", count);
 
       if (config.orientation === "vertical") {
@@ -457,10 +459,24 @@ module.exports = NodeHelper.create({
 
     var photos = Array.isArray(data) ? data : [data];
     const apiKey = config.unsplashApiKey || config.unsplashAccessKey;
+    const excludeIds = new Set(config.unsplashExcludeIds || []);
+    const excludeKeywords = (config.unsplashExcludeKeywords || []).map((k) => k.toLowerCase());
 
     for (var photo of photos) {
       if (!photo || !photo.urls) {
         continue;
+      }
+
+      if (excludeIds.has(photo.id)) {
+        continue;
+      }
+      if (excludeKeywords.length > 0) {
+        // Match whole words in the slug and descriptions, so "man" doesn't match "mansion"
+        var text = [photo.slug, photo.description, photo.alt_description].filter(Boolean).join(" ").toLowerCase();
+        var words = new Set(text.split(/[^a-z0-9]+/));
+        if (excludeKeywords.some((k) => words.has(k))) {
+          continue;
+        }
       }
 
       var photographer = (photo.user && photo.user.name) ? photo.user.name : "Unsplash";

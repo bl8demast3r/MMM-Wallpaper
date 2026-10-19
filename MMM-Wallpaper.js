@@ -30,6 +30,8 @@ Module.register("MMM-Wallpaper", {
     unsplashTopics: "",
     unsplashFeatured: false,
     unsplashUsername: "",
+    unsplashExcludeKeywords: [],
+    unsplashExcludeIds: [],
   },
 
   getStyles: function() {
