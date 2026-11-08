@@ -16,17 +16,17 @@ The module allows you to add wallpapers from various online sources.  Useful for
 ## Installation
 
 In your terminal, go to your MagicMirror's Module folder:
-````
+````sh
 cd ~/MagicMirror/modules
 ````
 
 Clone this repository:
-````
+````sh
 git clone https://github.com/kolbyjack/MMM-Wallpaper.git
 ````
 
 Install the module dependencies:
-````
+````sh
 cd MMM-Wallpaper
 npm install
 ````
@@ -86,12 +86,13 @@ The following properties can be configured:
 |`"flickr-api:<source>"`|Cycles through random selections of the specified flickr photos.  See below for details.|
 |`"http(s)://url"`|Reloads the specified url at the configured interval.|
 |`"icloud:<album id>"`|Cycles through random selections of the specified album.|
+|`"json+http(s)://url"`|For any endpoint that returns a JSON list of images as `[{"url":"...","caption":"..."}]`|
 |`"lightroom:<user.myportfolio.com/album>"`|Cycles through random selections of the specified album.|
 |`"local:</path/to/directory>"`|Cycles through random selections of the images in the specified local directory.|
 |`"synology-moments:<url>"`|Cycles through the latest images from the specified Synology moments album.|
 |`"/r/<subreddit>"`|Cycles through the most recent `hot` image posts from the subreddit.|
 |`"/user/<username>/m/<subreddit>"`|Cycles through the most recent `hot` image posts from the specified multireddit.|
-|`"metmuseum:<departmentID>,<isHightlight>,<q>"`|Cycle through collections in the Metropolitan Museum of Art. [departmentID](https://collectionapi.metmuseum.org/public/collection/v1/departments) is a number specifying collection type, e.g., Asian art, paintings etc. `<isHightlight>` is a `boolean` to show only highlighted artwork if set to `true`. `<q>` is keyword, e.g. artist name, culture, etc. All fields can be set to the wildcard `*`. For example, `"metmuseum:11,true,*"` would display highlighted European paintings.|
+|`"metmuseum:<departmentID>,<isHighlight>,<q>"`|Cycle through collections in the Metropolitan Museum of Art. [departmentID](https://collectionapi.metmuseum.org/public/collection/v1/departments) is a number specifying collection type, e.g., Asian art, paintings etc. `<isHighlight>` is a `boolean` to show only highlighted artwork if set to `true`. `<q>` is keyword, e.g. artist name, culture, etc. All fields can be set to the wildcard `*`. For example, `"metmuseum:11,true,*"` would display highlighted European paintings.|
 |`"nasa:<search term>"`|Cycles through images specified in `search term` of NASA's Image and Video Library (https://api.nasa.gov/).|
 |`"unsplash"` or `"unsplash:<search term>"`|Cycles through random wallpapers from Unsplash matching the specified search term (or curated editorial if omitted). Requires `unsplashApiKey`.|
 
@@ -157,5 +158,6 @@ MMM-Wallpaper can react to the following notifications sent by other modules:
 |Notification|Payload|Description|
 |---|---|---|
 |`LOAD_NEXT_WALLPAPER`|`none`|Will load the next wallpaper from the configured source.|
+|`LOAD_PREVIOUS_WALLPAPER`|`none`|Will load the previous wallpaper from the configured source.|
 |`UPDATE_WALLPAPER_CONFIG`|`string` or `object`|If the payload is a string, the module will use it as the new source to begin loading wallpapers.  If the payload is an object, the module will update its configuration with the object's properties.  In either case, a new wallpaper will immediately be loaded and the update timer will be reset.|
-|`USER_PRESENCE`|`bool`|Will take the appropriate action to hide or show itself based on the value of the payload and the configured `userPresnseAction`.|
+|`USER_PRESENCE`|`bool`|Will take the appropriate action to hide or show itself based on the value of the payload and the configured `userPresenceAction`.|
