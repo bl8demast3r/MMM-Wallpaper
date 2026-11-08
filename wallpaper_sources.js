@@ -567,12 +567,59 @@ class PexelsSource extends WallpaperSource {
   }
 }
 
+// Retry delays after Reddit rate limits us (429) or fails (5xx): 2, 4, 8, 16, then 30 minutes
+const REDDIT_RETRY_BASE_MS = 2 * 60 * 1000;
+const REDDIT_RETRY_MAX_MS = 30 * 60 * 1000;
+
 class RedditSource extends WallpaperSource {
+  constructor(module, config, id) {
+    super(module, config, id);
+    this.retryTimer = null;
+    this.retryAttempt = 0;
+  }
+
   static matches(source) {
     return source.startsWith("/r/") || source.startsWith("/user/");
   }
 
+  // Milliseconds the server asked us to wait (Retry-After or x-ratelimit-reset), or 0 if it didn't say
+  serverRetryDelay(response) {
+    const retryAfter = response.headers.get("retry-after");
+    if (retryAfter) {
+      const seconds = Number(retryAfter);
+      if (Number.isFinite(seconds)) {
+        return seconds * 1000;
+      }
+      const date = Date.parse(retryAfter);
+      if (!Number.isNaN(date)) {
+        return Math.max(date - Date.now(), 0);
+      }
+    }
+
+    const reset = Number(response.headers.get("x-ratelimit-reset"));
+    return Number.isFinite(reset) && reset > 0 ? reset * 1000 : 0;
+  }
+
+  scheduleRetry(response) {
+    const backoff = Math.min(REDDIT_RETRY_BASE_MS * 2 ** this.retryAttempt, REDDIT_RETRY_MAX_MS);
+    // Up to 20% jitter so we don't keep colliding with other modules polling Reddit
+    const delay = Math.round(Math.max(this.serverRetryDelay(response), backoff) * (1 + Math.random() * 0.2));
+
+    this.retryAttempt += 1;
+    clearTimeout(this.retryTimer);
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = null;
+      this.fetch();
+    }, delay);
+
+    console.warn(`Reddit request failed (HTTP ${response.status}), retry #${this.retryAttempt} in ${Math.round(delay / 1000)}s`);
+  }
+
   fetch() {
+    // A fetch replaces any pending retry, so the hourly refresh and a retry never both hit Reddit
+    clearTimeout(this.retryTimer);
+    this.retryTimer = null;
+
     const path = this.config.source;
 
     // Reddit blocks the JSON API for most clients, so read the RSS feed with browser-like headers
@@ -600,6 +647,12 @@ class RedditSource extends WallpaperSource {
 
   processResponse(body, response) {
     console.log(`Reddit returned HTTP Status: ${response.status}`);
+
+    if (response.status === 429 || response.status >= 500) {
+      this.scheduleRetry(response);
+      return [];
+    }
+    this.retryAttempt = 0;
 
     const images = [];
 
