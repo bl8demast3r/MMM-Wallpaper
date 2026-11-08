@@ -22,7 +22,7 @@ cd ~/MagicMirror/modules
 
 Clone this repository:
 ````sh
-git clone https://github.com/kolbyjack/MMM-Wallpaper.git
+git clone https://github.com/bl8demast3r/MMM-Wallpaper.git
 ````
 
 Install the module dependencies:
@@ -66,9 +66,9 @@ The following properties can be configured:
 |`filter`|`"grayscale(0.5) brightness(0.5)"`|The CSS filter to apply to the images, to improve readability of other modules' text|
 |`orientation`|`"auto"`|The image orientation to retrieve.  Choices are "vertical," "horizontal," and "auto."  Only used by the `pexels`, `bing`, and `unsplash` sources.|
 |`crossfade`|`true`|Whether to crossfade between images when loading a new wallpaper, or just replace the current image.|
-|`maxWidth`|`MAX_SAFE_INTEGER`|Maximum width of selected variant (supported for reddit, flickr, and unsplash sources).|
-|`maxHeight`|`MAX_SAFE_INTEGER`|Maximum height of selected variant (supported for reddit, flickr, and unsplash sources).|
-|`nsfw`|`true`|Whether to allow 18+ images to be chosen (only supported for reddit sources).|
+|`maxWidth`|`MAX_SAFE_INTEGER`|Maximum width of the image version to download, for sources that offer several sizes of each image (reddit, flickr, and unsplash). This does not filter which images are shown, and every image is scaled to the screen according to `size`. The module picks the smallest version that covers the screen, or the largest one under this limit. Reddit only offers a 640px preview and the original, so a limit below the original's size gives you the 640px preview.|
+|`maxHeight`|`MAX_SAFE_INTEGER`|Maximum height of the image version to download. Works the same way as `maxWidth`.|
+|`nsfw`|`true`|Whether to allow 18+ images to be chosen. **Currently not enforced:** this fork reads Reddit's RSS feed (Reddit blocks its JSON API), and the feed does not mark NSFW posts. Use subreddits you trust to be work-safe.|
 |`shuffle`|`true`|Whether to randomly select images from those sources that support it, or cycle through the latest.|
 |`size`|`cover`|Sizing policy for images.  Similar to CSS [background-size](https://www.w3schools.com/cssref/css3_pr_background-size.asp).  Choices are "cover," "contain," and "auto."|
 |`userPresenceAction`|`"none"`|What action to take when a `USER_PRESENCE` notification is received.  Choices are "none," "show," and "hide."|

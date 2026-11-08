@@ -39,7 +39,7 @@ class WallpaperSource {
         this.cacheResult(images);
       }
     })).catch(err => {
-      console.error(`[MMM-Wallpaper] Error requesting ${params.url}:`, err);
+      console.error(`Error requesting ${params.url}:`, err);
     });
   }
 
@@ -599,7 +599,7 @@ class RedditSource extends WallpaperSource {
   }
 
   processResponse(body, response) {
-    console.log(`[MMM-Wallpaper] Reddit returned HTTP Status: ${response.status}`);
+    console.log(`Reddit returned HTTP Status: ${response.status}`);
 
     const images = [];
 
@@ -625,10 +625,12 @@ class RedditSource extends WallpaperSource {
         const cleanUrl = imgMatch[1];
 
         if (!images.find(img => img.url === cleanUrl)) {
+          const thumbMatch = entry.match(/<media:thumbnail url="([^"]+)"/i);
+
           images.push({
             url: cleanUrl,
             caption: postTitle,
-            variants: [{ url: cleanUrl, width: 1920, height: 1080 }]
+            previewUrl: thumbMatch ? thumbMatch[1] : null
           });
 
           if (images.length === this.config.maximumEntries) {
@@ -638,8 +640,117 @@ class RedditSource extends WallpaperSource {
       }
     }
 
-    console.log(`[MMM-Wallpaper] Extracted ${images.length} images from Reddit XML.`);
-    return images;
+    console.log(`Extracted ${images.length} images from Reddit XML.`);
+
+    if (images.length > 0) {
+      // The feed has no image sizes, so read them from each file's header before publishing
+      Promise.all(images.map(image => this.addVariants(image))).then(results => this.cacheResult(results));
+    }
+    return [];
+  }
+
+  async addVariants({ url, caption, previewUrl }) {
+    if (!this.sizeCache) {
+      this.sizeCache = new Map();
+    }
+    if (!this.sizeCache.has(url)) {
+      if (this.sizeCache.size >= 500) {
+        this.sizeCache.clear();
+      }
+      this.sizeCache.set(url, await probeImageSize(url));
+    }
+
+    const size = this.sizeCache.get(url);
+    if (!size) {
+      // Unknown size: no variants, so the frontend just uses the full image
+      return { url, caption };
+    }
+
+    const variants = [{ url, width: size.width, height: size.height }];
+    const previewWidth = previewUrl ? Number.parseInt(new URL(previewUrl).searchParams.get("width"), 10) : NaN;
+
+    if (previewWidth > 0 && previewWidth < size.width) {
+      variants.unshift({ url: previewUrl, width: previewWidth, height: Math.round(previewWidth * size.height / size.width) });
+    }
+    return { url, caption, variants };
+  }
+}
+
+// Reads width/height from the start of a JPEG, PNG, GIF or WebP file. Returns null if unknown.
+function readImageSize(buf) {
+  if (buf.length >= 24 && buf.readUInt32BE(0) === 0x89504e47) {
+    return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
+  }
+  if (buf.length >= 10 && buf.toString("ascii", 0, 4) === "GIF8") {
+    return { width: buf.readUInt16LE(6), height: buf.readUInt16LE(8) };
+  }
+  if (buf.length >= 30 && buf.toString("ascii", 0, 4) === "RIFF" && buf.toString("ascii", 8, 12) === "WEBP") {
+    const chunk = buf.toString("ascii", 12, 16);
+
+    if (chunk === "VP8 ") {
+      return { width: buf.readUInt16LE(26) & 0x3fff, height: buf.readUInt16LE(28) & 0x3fff };
+    }
+    if (chunk === "VP8L") {
+      const bits = buf.readUInt32LE(21);
+      return { width: (bits & 0x3fff) + 1, height: ((bits >> 14) & 0x3fff) + 1 };
+    }
+    if (chunk === "VP8X") {
+      return { width: buf.readUIntLE(24, 3) + 1, height: buf.readUIntLE(27, 3) + 1 };
+    }
+    return null;
+  }
+  if (buf.length >= 4 && buf[0] === 0xff && buf[1] === 0xd8) {
+    let offset = 2;
+
+    while (offset + 9 <= buf.length) {
+      if (buf[offset] !== 0xff) {
+        return null;
+      }
+      const marker = buf[offset + 1];
+
+      if (marker === 0xff) {
+        offset += 1; // fill byte
+      } else if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+        return { width: buf.readUInt16BE(offset + 7), height: buf.readUInt16BE(offset + 5) };
+      } else if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd9)) {
+        offset += 2; // markers without a length
+      } else {
+        offset += 2 + buf.readUInt16BE(offset + 2);
+      }
+    }
+  }
+  return null;
+}
+
+// Downloads only the first part of an image to read its dimensions.
+async function probeImageSize(url, maxBytes = 65536) {
+  try {
+    const response = await fetch(url, { headers: { Range: `bytes=0-${maxBytes - 1}` } });
+
+    if (!response.ok || !response.body) {
+      return null;
+    }
+
+    // Stop reading at maxBytes even if the server ignores the Range header
+    const reader = response.body.getReader();
+    const chunks = [];
+    let total = 0;
+
+    while (total < maxBytes) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      chunks.push(value);
+      total += value.length;
+    }
+    reader.cancel().catch(() => {});
+
+    const size = readImageSize(Buffer.concat(chunks));
+    return (size && size.width > 0 && size.height > 0) ? size : null;
+  } catch (err) {
+    console.warn(`Could not read image size for ${url}: ${err.message}`);
+    return null;
   }
 }
 
@@ -656,7 +767,7 @@ class UnsplashSource extends WallpaperSource {
     const config = this.config;
 
     if (!this.apiKey) {
-      console.error("MMM-Wallpaper: Please specify an API key for Unsplash (unsplashApiKey)");
+      console.error("Please specify an API key for Unsplash (unsplashApiKey)");
       return;
     }
 
@@ -708,7 +819,7 @@ class UnsplashSource extends WallpaperSource {
 
   processResponse(body, response) {
     if (response.status !== 200) {
-      console.error(`[MMM-Wallpaper] Unsplash API error (HTTP ${response.status}): ${body}`);
+      console.error(`Unsplash API error (HTTP ${response.status}): ${body}`);
       return [];
     }
 
@@ -716,12 +827,12 @@ class UnsplashSource extends WallpaperSource {
     try {
       data = JSON.parse(body);
     } catch (e) {
-      console.error("[MMM-Wallpaper] Failed to parse Unsplash response JSON:", e);
+      console.error("Failed to parse Unsplash response JSON:", e);
       return [];
     }
 
     if (data.errors) {
-      console.error("[MMM-Wallpaper] Unsplash API returned errors:", data.errors);
+      console.error("Unsplash API returned errors:", data.errors);
       return [];
     }
 
